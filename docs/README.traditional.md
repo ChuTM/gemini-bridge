@@ -1,13 +1,19 @@
 # Gemini Web Bridge
 
-把任何 **OpenAI / Ollama / Claude 相容的客戶端**（DeepSeek Harness、Open WebUI、LibreChat，或你自己的程式）連接到 **Gemini 網頁版**（gemini.google.com），透過本機 Express 網關與一個在你瀏覽器分頁中運行的 Tampermonkey/Violentmonkey 使用者腳本來驅動。
+> 把 Gemini 網頁版 (`gemini.google.com`) 當成本地 OpenAI / Ollama / Claude 端點來驅動。一個 Tampermonkey 使用者腳本操作你的瀏覽器分頁；Express 網關則說你客戶端的協定。
+
+[![License: ISC](https://img.shields.io/badge/license-ISC-green.svg)](README.md#授權)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
+[![Express](https://img.shields.io/badge/express-%5E5.3.0-blue.svg)](https://expressjs.com)
+
+## 一覽表
 
 | | |
 |---|---|
 | **網關** | `server.js` — Express，監聽 `http://127.0.0.1:3000` |
 | **瀏覽器驅動程式** | `public/gemini-bridge.userscript.user.js` — Gemini 網頁版使用者腳本 |
-| **分頁 ↔ 網關傳輸** | 長輪詢經 `GM_xmlhttpRequest`（Gemini 的 CSP 封鎖 WebSocket 到 `127.0.0.1`） |
-| **對客戶端公開的模型 ID** | `gemini-web` |
+| **分頁 ↔ 網關** | 長輪詢經 `GM_xmlhttpRequest`（Gemini 的 CSP 封鎖 WebSocket 到 `127.0.0.1`） |
+| **模型 ID** | `gemini-web` |
 
 ## 語言版本
 
@@ -19,56 +25,68 @@
 
 ## 目錄
 
-1. [概述](#概述)
-2. [架構](#架構)
-3. [快速入門](#快速入門)
-4. [API 參考](#api-參考)
-5. [請求範例](#請求範例)
-6. [思考 / 推理模式](#思考-推理模式)
-7. [Ghost Mode（臨時對話）與會話](#ghost-mode-臨時對話與會話)
-8. [工具呼叫 / 本地函數協議](#工具呼叫-本地函數協議)
-9. [檔案與圖片附件](#檔案與圖片附件)
-10. [環境變數](#環境變數)
-11. [使用者限制與注意事項](#使用者限制與注意事項)
-12. [邏輯參考](#邏輯參考)
-13. [流程圖](#流程圖)
-14. [疑難排解](#疑難排解)
-15. [安全說明](#安全說明)
-16. [授權](#授權)
+- [概述](#概述)
+- [架構](#架構)
+- [快速入門](#快速入門)
+- [API 參考](#api-參考)
+- [請求範例](#請求範例)
+- [思考 / 推理模式](#思考-推理模式)
+- [Ghost Mode（臨時對話）與會話](#ghost-mode-臨時對話與會話)
+- [工具呼叫 / 本地函數協議](#工具呼叫-本地函數協議)
+- [檔案與圖片附件](#檔案與圖片附件)
+- [環境變數](#環境變數)
+- [使用者限制與注意事項](#使用者限制與注意事項)
+- [邏輯參考](#邏輯參考)
+- [流程圖](#流程圖)
+- [疑難排解](#疑難排解)
+- [安全說明](#安全說明)
+- [授權](#授權)
 
 ---
 
 ## 概述
 
-`gemini-bridge` 將 Gemini 網頁版變成本地模型端點。你的客戶端傳送一般的 OpenAI 風格聊天請求到 `http://127.0.0.1:3000/v1/chat/completions`（或 Ollama / Claude 風格的路徑），橋接器會：
+`gemini-bridge` 將 Gemini 網頁版變成你可以像呼叫其他本地 LLM 端點一樣呼叫的模型端點。你的客戶端傳送一般的聊天請求到 `http://127.0.0.1:3000/v1/chat/completions`（或 Ollama / Claude 風格的路徑），橋接器會：
 
 1. 選擇（或復用）由使用者腳本驅動的作用中 Gemini 瀏覽器分頁。
 2. 視需要開啟全新的 **Ghost Mode（臨時對話）** 視窗，乾淨地注入上下文。
-3. 將你的提示詞輸入 Gemini 的編輯器，附加檔案/圖片，點擊 **Send**。
-4. 當 Gemini 在 DOM 中回應時，將串流回應轉成 Markdown 傳回客戶端。
+3. 將你的提示詞輸入 Gemini 的編輯器，附加任何檔案或圖片，點擊 **Send**。
+4. 當 Gemini 在 DOM 中回應時，將串流回應轉成 Markdown 傳回你的客戶端。
 5. 支援多輪「思考」（`off` / `low` / `medium` / `high`）、透過 `【TOOL_CALL name="..."】` 進行工具呼叫、在 Gemini 網頁暫時性錯誤時自動重試，以及跨輪次的會話延續。
+
+> **同一時間只有一個橋接器分頁。** 網關保留單一作用中分頁。若第二個 Gemini 分頁聲稱橋接器，第一個會停止。同一時間只應讓一個分頁運行橋接器。
 
 ---
 
 ## 架構
 
-```text
-┌──────────────┐        HTTP (OpenAI / Ollama / Claude)        ┌─────────────────────┐
-│   客戶端     │◄──────────────────── SSE / NDJSON / JSON ────►│ Express 網關        │
-│  (你的應用)  │                                               │ server.js (:3000)   │
-└──────────────┘                                               └──────────┬──────────┘
-                                                                           │ 長輪詢
-                                                                           │ GM_xmlhttpRequest
-                                                                           ▼
-                                                          ┌────────────────────────────────┐
-                                                          │ Gemini 瀏覽器分頁（含使用者腳本） │
-                                                          │ https://gemini.google.com      │
-                                                          └────────────────────┬─────────────┘
-                                                                               │ DOM 操作
-                                                                               ▼
-                                                          ┌────────────────────────────────┐
-                                                          │ Gemini 網頁 UI (gemini.google.com)│
-                                                          └────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Client ["客戶端應用程式"]
+        C[DeepSeek Harness / Open WebUI / 自訂客戶端]
+    end
+    subgraph Gateway ["本地網關 (server.js, :3000)"]
+        G1[OpenAI / Ollama / Claude 端點]
+        G2[橋接器鎖 + 會話狀態]
+        G3[GET /bridge/poll  ·  POST /bridge/message]
+    end
+    subgraph Tab ["Gemini 瀏覽器分頁 (使用者腳本)"]
+        T1[長輪詢網關]
+        T2[驅動 Gemini DOM：輸入、附加、發送、停止]
+        T3[將 DOM 串流為 Markdown → 網關]
+    end
+    subgraph Web ["gemini.google.com"]
+        W[Gemini 網頁 UI]
+    end
+
+    C -->|HTTP JSON / SSE / NDJSON| G1
+    G1 --> G2
+    G2 <==>|GM_xmlhttpRequest 長輪詢| G3
+    G3 <==>|命令與結果| T1
+    T1 --> T2
+    T2 -->|DOM 自動化| W
+    W -->|呈現的回應| T3
+    T3 -->|SSE / NDJSON / JSON| C
 ```
 
 使用者腳本會將一個懸浮按鈕注入 Gemini 頁面。點擊它將分頁註冊為橋接器；分頁隨後對 `GET /bridge/poll` 進行長輪詢，等待命令（`prompt`、`add_file`、`start_completion`、`stop_response`、`new_chat`、`open_url`），並透過 `POST /bridge/message` 回報結果。
@@ -88,7 +106,7 @@ npm install
 
 ### 2. 安裝使用者腳本
 
-在你用來開啟 Gemini 的瀏覽器中安裝使用者腳本管理員（Tampermonkey 或 Violentmonkey），然後加入此使用者腳本：
+在你用來開啟 Gemini 的瀏覽器中安裝 Tampermonkey 或 Violentmonkey，然後加入此使用者腳本：
 
 `public/gemini-bridge.userscript.user.js`
 
@@ -121,7 +139,7 @@ node server.js
 1. 在已安裝使用者腳本的瀏覽器中開啟 `https://gemini.google.com`。
 2. 確認處於 **臨時對話（Temporary Chat / Ghost Mode）**。
 3. 點擊右下角的懸浮橋接器按鈕，直到顯示 **Bridge active（綠點）**。
-4. 分頁現已註冊；網關於 `GET /health` 回報 `connected: true`。
+4. 分頁現已註冊；`GET /health` 回報 `connected: true`。
 
 ### 5. 需煙測試
 
@@ -200,9 +218,11 @@ http://127.0.0.1:3000
 
 `body.reasoning`、`body.extra_body.reasoning_effort`、`body.extra_body.thinking_level` 等欄位在解析思考層級時也會被讀取。
 
+> **輸出格式限制。** Gemini 網頁會損壞三個反引號程式碼區塊，因此橋接器指示模型使用 `···` 圍欄，並會從客戶端可見文字中剝離 `[[REASON]]`、`【TOOL_CALL】`、`【END_RESPONSE】` 控制標籤。不要透過此橋接器依賴 ``` 區塊。
+
 ### 回應格式
 
-**OpenAI（串流）** — `text/event-stream`：
+**OpenAI（串流）** — `text/event-stream`:
 
 ```
 data: { "id": "chatcmpl-...", "object": "chat.completion.chunk", ..., "choices": [{ "delta": { "role": "assistant", "content": "" } }] }
@@ -214,7 +234,7 @@ data: [DONE]
 
 推理內容會串流在 `delta.reasoning_content` 中；工具呼叫在 `delta.tool_calls` 中。最終使用量區塊會回報 `prompt_tokens`、`completion_tokens`（推理 + 輸出）與 `total_tokens`。
 
-**Ollama（串流）** — `application/x-ndjson`：
+**Ollama（串流）** — `application/x-ndjson`:
 
 ```json
 { "model": "gemini-web", "created_at": "...", "message": { "role": "assistant", "content": "Hello" }, "done": false }
@@ -229,9 +249,12 @@ data: [DONE]
 
 ### 錯誤
 
-- `400` — 缺少 `messages`/`prompt`。
-- `502`（非串流）或 SSE 錯誤事件（串流）— 當分頁未連線、超時，或 Gemini 回傳不可重試錯誤時為 `bridge_error`。
-- Gemini 的暫時性錯誤（速率限制、`1095`、網路中斷、空白輸出）會自動重試（見 [重試邏輯](#重試邏輯））。
+| 狀態 | 意義 |
+|---|---|
+| `400` | 缺少 `messages` / `prompt`。 |
+| `502`（非串流）或 SSE 錯誤事件（串流） | `bridge_error` 當分頁未連線、超時，或 Gemini 回傳不可重試錯誤時。 |
+
+Gemini 的暫時性錯誤（速率限制、`1095`、網路中斷、空白輸出）會自動重試（見 [重試邏輯](#重試邏輯)）。
 
 ---
 
@@ -323,10 +346,10 @@ while (true) {
 
 ### 輪次流程
 
-1. **第一輪 — 深度思考**：要求 Gemini 在 `[[REASON]]...[[/REASON]]` 內部推理（純文字，不含 Markdown、不含工具呼叫）。
+1. **第一輪 — 深度思考：** 要求 Gemini 在 `[[REASON]]...[[/REASON]]` 內部推理（純文字，不含 Markdown、不含工具呼叫）。
 2. **第二輪 — 關鍵重新思考**（僅 `high` 模式）：第二輪檢查是有更好的解決方案、遺漏細節，或潛在錯誤。
-3. **最終 — 執行輪**：模型輸出 `【TOOL_CALL name="..."】{...}【/TOOL_CALL】` 區塊來呼叫本地函數，或輸出純文字答案並以 `【END_RESPONSE】` 結束。
-4. **稽核迴圈（最多 2 次嘗試）**：若預期會有工具，但既沒有 `【TOOL_CALL】` 也沒有 `【END_RESPONSE】`，橋接器會發送稽核提示詞並重試。
+3. **最終 — 執行輪：** 模型輸出 `【TOOL_CALL name="..."】{...}【/TOOL_CALL】` 區塊來呼叫本地函數，或輸出純文字答案並以 `【END_RESPONSE】` 結束。
+4. **稽核迴圈（最多 2 次嘗試）：** 若預期會有工具，但既沒有 `【TOOL_CALL】` 也沒有 `【END_RESPONSE】`，橋接器會發送稽核提示詞並重試。
 
 推理文字會在產生時，以 `reasoning_content`（OpenAI）或 `thinking`（Ollama）形式串流到客戶端。
 
@@ -343,7 +366,7 @@ while (true) {
   - 請求 `new_chat: true`，或
   - 會話字元數達到閾值（`cumulativeChars >= 100000`，約為 32k 內容窗口的安全餘量），或
   - 尚無有效會話。
-- **延續（增量模式）**：若同一個分頁、相同的工作階段 ID，且先前的非助手訊息嚴格為目前訊息的前綴，則只會將「新增的」輪次傳送給 Gemini，避免重複傳輸完整歷史。
+- **延續（增量模式）：** 若同一個分頁、相同的工作階段 ID，且先前的非助手訊息嚴格為目前訊息的前綴，則只會將「新增的」輪次傳送給 Gemini，避免重複傳輸完整歷史。
 - 嚴格的存活檢查：相同分頁 ID + 相同的 `clientSessionId`（`x-session-id` / `x-conversation-id` 標頭，或 `metadata.session_id`）+ `prevNonAssistant` 嚴格為 `normalizedNonAssistant` 的前綴 + 輪次數多於已傳送的輪次。
 - 輪次指紋會正規化掉動態時間戳與中繼層注入的執行階段標籤（`<time-context>`、`<runtime-context>`、`<system-reminder>`、`<skill-catalog>` 等），讓中間循環步驟停留在同一會話中。
 
@@ -414,8 +437,6 @@ while (true) {
 | `GEMINI_API_KEY` | `""` | 啟用透過 Google `countTokens` REST API（`gemini-2.5-flash`）的精確 trion 計算。 |
 | `BRIDGE_SEND_DELAY_MS` | `5000` | 在將提示詞傳送到 Gemini 網頁前等待的毫秒數（有助於避免速率限制）。 |
 
-範例：
-
 ```bash
 GEMINI_API_KEY=your_key BRIDGE_SEND_DELAY_MS=3000 node server.js
 ```
@@ -426,43 +447,17 @@ GEMINI_API_KEY=your_key BRIDGE_SEND_DELAY_MS=3000 node server.js
 
 在整合橋接器前，請先檢視這些限制。
 
-### 1. 需要 Gemini 帳戶與網頁版
-需要一個可運作的 Gemini 帳戶並能存取 `gemini.google.com`。橋接器驅動的是官方網頁版；產生內容不需要 Gemini API 金鑰（僅用於選擇性的 trion 計算）。
-
-### 2. 同一時間只能有一個橋接器分頁
-網關保留單一 `activeTab`。若另一個 Gemini 分頁聲稱橋接器（輪詢時回傳 `replaced: true`），先前的分頁會停止。同一時間只應讓一個分頁運行橋接器。
-
-### 3. 僅限臨時對話（Ghost Mode）
-每個會話都在臨時對話中開啟。若你需要在 Google 端保留持續的 Gemini 對話歷史，本橋接器不會保留 — 會話是短暫性的。
-
-### 4. 無 WebSocket，僅長輪詢
-因為 Gemini 的 CSP 封鎖 `ws://127.0.0.1`，所以分頁 ↔ 網關傳輸使用 HTTP 長輪詢（`GET /bridge/poll`），通常每 100 毫秒至 1 秒輪詢一次，錯誤時會指數退避。
-
-### 5. Gemini 速率限制適用
-所有產生都會消耗你的 Gemini 網頁配額。速率限制錯誤（例如 `(1095)`、`Rate limit`）會觸發自動重試並退避，但頻繁大量使用仍可能被 Google 節流。
-
-### 6. 需要使用者腳本管理員
-必須安裝 Tampermonkey/Violentmonkey（或類似），並為 `127.0.0.1` 與 `localhost` 授權 `GM_xmlhttpRequest`。使用者腳本僅在 `gemini.google.com` 的頂層框架運行（助手框架會被忽略）。
-
-### 7. 並行限制：一次只處理一個請求
-橋接器鎖定會序列化聊天請求。執行中的請求期間，其他請求會排隊並依序處理；`GET /health` 在執行期間會回報 `busy: true`。
-
-### 8. 逾時
-- 分頁離線：15 秒 → 輪次失敗。
-- 串流停滯：180 秒 → 輪次失敗。
-- `start_completion` 等待：35 秒；`performAction` 預設：20 秒；`add_file`：60 秒。
-
-### 9. 會話大小閾值
-當累積會話字元數達到 100 000 時，下一輪會開啟新的 Ghost Chat（會傳遞上下文摘要）。非常長的對話會重新啟動上下文。
-
-### 10. 輸出格式限制
-Gemini 網頁會損壞三個反引號程式碼區塊，因此橋接器指示模型使用 `···` 圍欄，並會從客戶端可見文字中剝離 `[[REASON]]`、`【TOOL_CALL】`、`【END_RESPONSE】` 控制標籤。不要透過此橋接器依賴 ``` 區塊。
-
-### 11. 本地執行風險
-橋接器會將本地檔案/工具存取的工具協議暴露給連線的模型（依你的工具層而定）。僅連線可信任的客戶端；CORS 預設為開放 `*`。
-
-### 12. 並非 Google 官方產品
-這是一個非官方的橋接器，會自動化 Gemini 網頁版。若 Google 變更頁面 DOM 或類別名稱，行為可能會改變（使用者腳本盡可能使用角色、標籤與文字而非雜湊類別，但某些選擇器仍依賴 DOM）。
+1. **需要 Gemini 帳戶與網頁版。** 需要一個可運作的 Gemini 帳戶並能存取 `gemini.google.com`。橋接器驅動的是官方網頁版；產生內容不需要 Gemini API 金鑰（僅用於選擇性的 trion 計算）。
+2. **同一時間只能有一個橋接器分頁。** 同一時間只應讓一個分頁運行橋接器；另一個分頁聲稱橋接器會停止先前的分頁。
+3. **僅限臨時對話（Ghost Mode）。** 每個會話都在臨時對話中開啟。若你需要在 Google 端保留持續的 Gemini 對話歷史，本橋接器不會保留 — 會話是短暫性的。
+4. **無 WebSocket，僅長輪詢。** 因為 Gemini 的 CSP 封鎖 `ws://127.0.0.1`，所以分頁 ↔ 網關傳輸使用 HTTP 長輪詢（`GET /bridge/poll`），通常每 100 毫秒至 1 秒輪詢一次，錯誤時會指數退避。
+5. **Gemini 速率限制適用。** 所有產生都會消耗你的 Gemini 網頁配額。速率限制錯誤（例如 `(1095)`、`Rate limit`）會觸發自動重試並退避，但頻繁大量使用仍可能被 Google 節流。
+6. **需要使用者腳本管理員。** 必須安裝 Tampermonkey/Violentmonkey（或類似），並為 `127.0.0.1` 與 `localhost` 授權 `GM_xmlhttpRequest`。使用者腳本僅在 `gemini.google.com` 的頂層框架運行（助手框架會被忽略）。
+7. **並行限制：一次只處理一個請求。** 橋接器鎖定會序列化聊天請求。執行中的請求期間，其他請求會排隊並依序處理；`GET /health` 在執行期間會回報 `busy: true`。
+8. **逾時。** 分頁離線：15 秒 → 輪次失敗。串流停滯：180 秒 → 輪次失敗。`start_completion` 等待：35 秒；`performAction` 預設：20 秒；`add_file`：60 秒。
+9. **會話大小閾值。** 當累積會話字元數達到 100 000 時，下一輪會開啟新的 Ghost Chat（會傳遞上下文摘要）。非常長的對話會重新啟動上下文。
+10. **本地執行風險。** 橋接器會將本地檔案/工具存取的工具協議暴露給連線的模型（依你的工具層而定）。僅連線可信任的客戶端；CORS 預設為開放 `*`。
+11. **並非 Google 官方產品。** 這是一個非官方的橋接器，會自動化 Gemini 網頁版。若 Google 變更頁面 DOM 或類別名稱，行為可能會改變（使用者腳本盡可能使用角色、標籤與文字而非雜湊類別，但某些選擇器仍依賴 DOM）。
 
 ---
 
@@ -630,7 +625,7 @@ flowchart TD
 flowchart TD
     A[thinking_level 已解析] --> B{off？}
     B -- 是 --> C[直接單輪：提示詞 → 回答 / 工具]
-    B -- 否 --> D["第一輪：[[REASON]] 深度思考"]
+    B -- 否 --> D[第一輪：[[REASON]] 深度思考]
     D --> E{過早發出 【TOOL_CALL】？}
     E -- 是 --> F[捕捉工具呼叫；跳過剩餘輪次 → C]
     E -- 否 --> G{high 模式？}
