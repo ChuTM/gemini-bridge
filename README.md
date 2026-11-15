@@ -603,14 +603,14 @@ flowchart TD
     D --> E{Session decision}
     E -- force / watermark / no prefix match --> F[Open fresh Ghost Chat: Temporary Chat]
     E -- same tab + session + prefix match --> G[Delta continuation: send only new turns]
-    F --> H[Attach files: add_file × N]
+    F --> H["Attach files: add_file × N"]
     G --> H
     H --> I[Send prompt to Gemini tab]
-    I --> J[start_completion → stream deltas]
+    I --> J["start_completion → stream deltas"]
     J --> K{message_completed?}
-    K -- error / timeout --> L[Retry up to 3 × (backoff; new_chat + re-attach on attempt ≥2 with files)]
+    K -- error / timeout --> L["Retry up to 3 × (backoff; new_chat + re-attach on attempt ≥2 with files)"]
     L --> I
-    K -- yes --> M[Parse 【TOOL_CALL】 / 【END_RESPONSE】]
+    K -- yes --> M["Parse 【TOOL_CALL】 / 【END_RESPONSE】"]
     M --> N[Audit loop max 2 if missing tool calls / END_RESPONSE]
     N --> O[Release bridge lock]
     O --> P[Stream / JSON response to client]
@@ -622,17 +622,17 @@ flowchart TD
 flowchart TD
     A[thinking_level resolved] --> B{off?}
     B -- yes --> C[Direct single turn: prompt → answer / tools]
-    B -- no --> D[Round 1: [[REASON]] deep thought]
-    D --> E{premature 【TOOL_CALL】?}
-    E -- yes --> F[Capture tool calls; skip remaining rounds → C]
+    B -- no --> D["Round 1: [[REASON]] deep thought"]
+    D --> E{"premature 【TOOL_CALL】?"}
+    E -- yes --> F["Capture tool calls; skip remaining rounds → C"]
     E -- no --> G{high mode?}
     G -- no --> H[Final execution turn]
     G -- yes --> I[Round 2: critical rethink]
-    I --> J{premature 【TOOL_CALL】?}
+    I --> J{"premature 【TOOL_CALL】?"}
     J -- yes --> F
     J -- no --> H
-    H --> K{has tools && missing TOOL_CALL/END_RESPONSE?}
-    K -- yes --> L[Audit prompt · retry up to 2]
+    H --> K{"has tools && missing TOOL_CALL/END_RESPONSE?"}
+    K -- yes --> L["Audit prompt · retry up to 2"]
     L --> H
     K -- no --> M[Stream reasoning + content + tool_calls to client]
     C --> M
@@ -642,13 +642,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[New chat request arrives] --> B{forceNewChat or needsRefresh (>=100k chars)?}
-    B -- yes --> C[Fresh Ghost Chat · full context injected]
+    A[New chat request arrives] --> B{"forceNewChat or needsRefresh (>=100k chars)?"}
+    B -- yes --> C["Fresh Ghost Chat · full context injected"]
     B -- no --> D{same tab id?}
     D -- no --> C
     D -- yes --> E{same client session id?}
     E -- no --> C
-    E -- yes --> F{previous turns = strict prefix of current turns?}
+    E -- yes --> F{"previous turns = strict prefix of current turns?"}
     F -- no --> C
     F -- yes --> G{more turns than already sent?}
     G -- no --> C
@@ -663,8 +663,8 @@ flowchart TD
     B -- no --> C[Reject: 502 bridge_error / SSE error]
     B -- yes --> D{attempt < maxRetries 3?}
     D -- no --> C
-    D -- yes --> E[Backoff: min(attempt*2500 ms, 8000 ms); rate limit → 10–30 s]
-    E --> F{attempt >= 2 with files attached?}
+    D -- yes --> E["Backoff: min(attempt*2500 ms, 8000 ms); rate limit → 10–30 s"]
+    E --> F{"attempt >= 2 with files attached?"}
     F -- yes --> G[new_chat + re-attach all files]
     F -- no --> H[Resend prompt to Gemini]
     G --> H
@@ -679,7 +679,7 @@ flowchart TD
     B -- no --> A
     B -- yes --> C{command type}
     C -- prompt --> D[writeEditor: type prompt via real input events]
-    C -- add_file --> E[Attach file: paste → `+` menu → drag-and-drop]
+    C -- add_file --> E["Attach file: paste → `+` menu → drag-and-drop"]
     C -- start_completion --> F[clickSendAndVerify: click Send, Enter fallback]
     C -- stop_response --> G[Click Stop button]
     C -- new_chat / ghost_chat --> H[Temporary Chat flow]

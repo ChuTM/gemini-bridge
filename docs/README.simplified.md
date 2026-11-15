@@ -606,14 +606,14 @@ flowchart TD
     D --> E{会话决策}
     E -- 强制 / 字符数阈值 / 前缀不符 --> F[开启全新 Ghost Chat：临时对话]
     E -- 相同标签页 + 会话 + 前缀匹配 --> G[增量延续：只传送新轮次]
-    F --> H[附加文件：add_file × N]
+    F --> H["附加文件：add_file × N"]
     G --> H
     H --> I[将提示词传送到 Gemini 标签页]
-    I --> J[start_completion → 串流差分]
+    I --> J["start_completion → 串流差分"]
     J --> K{message_completed？}
-    K -- 错误 / 超时 --> L[最多重试 3 次 (退避；第 2 次且有文件时 new_chat + 重新附加)]
+    K -- 错误 / 超时 --> L["最多重试 3 次 (退避；第 2 次且有文件时 new_chat + 重新附加)"]
     L --> I
-    K -- 是 --> M[解析 【TOOL_CALL】 / 【END_RESPONSE】]
+    K -- 是 --> M["解析 【TOOL_CALL】 / 【END_RESPONSE】"]
     M --> N[稽核循环最多 2 次，若缺少工具调用 / END_RESPONSE]
     N --> O[释放桥接器锁]
     O --> P[串流 / JSON 回应给客户端]
@@ -625,17 +625,17 @@ flowchart TD
 flowchart TD
     A[thinking_level 已解析] --> B{off？}
     B -- 是 --> C[直接单轮：提示词 → 回答 / 工具]
-    B -- 否 --> D[第一轮：[[REASON]] 深度思考]
-    D --> E{过早发出 【TOOL_CALL】？}
-    E -- 是 --> F[捕捉工具调用；跳过剩余轮次 → C]
+    B -- 否 --> D["第一轮：[[REASON]] 深度思考"]
+    D --> E{"过早发出 【TOOL_CALL】？"}
+    E -- 是 --> F["捕捉工具调用；跳过剩余轮次 → C"]
     E -- 否 --> G{high 模式？}
     G -- 否 --> H[最终执行轮]
     G -- 是 --> I[第二轮：关键重新思考]
-    I --> J{过早发出 【TOOL_CALL】？}
+    I --> J{"过早发出 【TOOL_CALL】？"}
     J -- 是 --> F
     J -- 否 --> H
     H --> K{有工具且缺少 TOOL_CALL/END_RESPONSE？}
-    K -- 是 --> L[稽核提示词 · 最多重试 2 次]
+    K -- 是 --> L["稽核提示词 · 最多重试 2 次"]
     L --> H
     K -- 否 --> M[将推理 + 内容 + tool_calls 串流到客户端]
     C --> M
@@ -645,8 +645,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[新的聊天请求到达] --> B{forceNewChat 或 needsRefresh (>=100k 字符)？}
-    B -- 是 --> C[全新 Ghost Chat · 注入完整上下文]
+    A[新的聊天请求到达] --> B{"forceNewChat 或 needsRefresh (>=100k 字符)？"}
+    B -- 是 --> C["全新 Ghost Chat · 注入完整上下文"]
     B -- 否 --> D{相同标签页 ID？}
     D -- 否 --> C
     D -- 是 --> E{相同的会话 ID？}
@@ -666,8 +666,8 @@ flowchart TD
     B -- 否 --> C[拒绝：502 bridge_error / SSE 错误]
     B -- 是 --> D{attempt < maxRetries 3？}
     D -- 否 --> C
-    D -- 是 --> E[退避：min(attempt*2500 ms, 8000 ms)；速率限制 → 10–30 秒]
-    E --> F{attempt >= 2 且附有文件？}
+    D -- 是 --> E["退避：min(attempt*2500 ms, 8000 ms)；速率限制 → 10–30 秒"]
+    E --> F{"attempt >= 2 且附有文件？"}
     F -- 是 --> G[new_chat + 重新附加所有文件]
     F -- 否 --> H[重新将提示词传送到 Gemini]
     G --> H
@@ -682,7 +682,7 @@ flowchart TD
     B -- 否 --> A
     B -- 是 --> C{命令类型}
     C -- prompt --> D[writeEditor：通过真实输入事件输入提示词]
-    C -- add_file --> E[附加文件：剪贴板贴上 → `+` 菜单 → 拖放]
+    C -- add_file --> E["附加文件：剪贴板贴上 → `+` 菜单 → 拖放"]
     C -- start_completion --> F[clickSendAndVerify：点击 Send，Enter 作为后备]
     C -- stop_response --> G[点击 Stop 按钮]
     C -- new_chat / ghost_chat --> H[临时对话流程]
