@@ -2,7 +2,7 @@
 
 > Drive Gemini's web UI (`gemini.google.com`) from a local OpenAI / Ollama / Claude endpoint. A Tampermonkey userscript steers your browser tab; an Express gateway speaks your client's protocol.
 
-[![License: ISC](https://img.shields.io/badge/license-ISC-green.svg)](README.md#license)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](README.md#license)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
 [![Express](https://img.shields.io/badge/express-%5E5.3.0-blue.svg)](https://expressjs.com)
 
@@ -722,4 +722,4 @@ flowchart TD
 
 ## License
 
-ISC
+AGPL-3.0

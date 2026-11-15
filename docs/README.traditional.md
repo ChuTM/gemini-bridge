@@ -2,7 +2,7 @@
 
 > 把 Gemini 網頁版 (`gemini.google.com`) 當成本地 OpenAI / Ollama / Claude 端點來驅動。一個 Tampermonkey 使用者腳本操作你的瀏覽器分頁；Express 網關則說你客戶端的協定。
 
-[![License: ISC](https://img.shields.io/badge/license-ISC-green.svg)](README.md#授權)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](README.md#授權)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](https://nodejs.org)
 [![Express](https://img.shields.io/badge/express-%5E5.3.0-blue.svg)](https://expressjs.com)
 
@@ -725,4 +725,4 @@ flowchart TD
 
 ## 授權
 
-ISC
+AGPL-3.0
